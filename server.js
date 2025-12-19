@@ -1,176 +1,182 @@
-import express from "express";
-import cors from "cors";
+// server.js — tiklangan va to'liq ishlaydigan backend
+// Express + Telegram WebApp + TON Connect uchun
+
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-const PORT = process.env.PORT || 10000;
+const PORT = 3000;
 
-/* ======================
-   SAVOLLAR BAZASI
-====================== */
-const questions = [
-  {
-    id: 1,
-    question: "O‘zbekiston poytaxti qaysi shahar?",
-    variants: ["Samarqand", "Buxoro", "Toshkent", "Xiva"],
-    correctIndex: 2
-  },
-  {
-    id: 2,
-    question: "5 × 6 nechiga teng?",
-    variants: ["11", "30", "56", "20"],
-    correctIndex: 1
-  },
-  {
-    id: 3,
-    question: "HTML nimaning qisqartmasi?",
-    variants: [
-      "Hyper Tool Markup Language",
-      "HyperText Markup Language",
-      "HighText Machine Language",
-      "Home Tool Markup Language"
-    ],
-    correctIndex: 1
-  }
-];
+/***********************
+ * SOZLAMALAR
+ ***********************/
+const DAILY_QUESTION_LIMIT = 100; // 1 sutkada jami savollar (to'g'ri + xato)
+const DAILY_ERROR_LIMIT = 10;     // 1 sutkada xato javoblar
+const EXTRA_ERROR_PACK = 5;       // token bilan olinadigan xato imkoniyati
 
-/* ======================
-   USERLAR XOTIRASI
-====================== */
+/***********************
+ * VAQT YORDAMCHI FUNKSIYALAR
+ ***********************/
+function todayKey() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/***********************
+ * USER STORAGE (TEMP)
+ * Keyinchalik MongoDB ga ko'chiriladi
+ ***********************/
 const users = {};
-/*
-users[tg_id] = {
-  usedToday: 0,
-  wrongToday: 0,
-  tokens: 0,
-  lastReset: timestamp,
-  currentQuestionId: null
-}
-*/
 
-function resetIfNewDay(user) {
-  const now = Date.now();
-  const oneDay = 24 * 60 * 60 * 1000;
-
-  if (!user.lastReset || now - user.lastReset > oneDay) {
-    user.usedToday = 0;
-    user.wrongToday = 0;
-    user.lastReset = now;
-  }
-}
-
-/* ======================
-   SAVOL OLISH
-====================== */
-app.get("/question", (req, res) => {
-  const tg_id = req.query.tg_id;
-  if (!tg_id) return res.json({ error: "tg_id yo‘q" });
-
-  if (!users[tg_id]) {
-    users[tg_id] = {
-      usedToday: 0,
-      wrongToday: 0,
+function getUser(userId) {
+  if (!users[userId]) {
+    users[userId] = {
+      userId,
+      wallet: null,
       tokens: 0,
-      lastReset: Date.now(),
-      currentQuestionId: null
+      score: 0,
+      stats: {
+        date: todayKey(),
+        questions: 0,
+        errors: 0,
+        extraErrors: 0
+      }
     };
   }
 
-  const user = users[tg_id];
-  resetIfNewDay(user);
-
-  if (user.usedToday >= 100) {
-    return res.json({ error: "❌ Kunlik savol limiti tugadi" });
+  // yangi kun bo'lsa reset
+  if (users[userId].stats.date !== todayKey()) {
+    users[userId].stats = {
+      date: todayKey(),
+      questions: 0,
+      errors: 0,
+      extraErrors: 0
+    };
   }
 
-  if (user.wrongToday >= 10) {
-    return res.json({
-      error: "❌ Xato javoblar limiti tugadi. Token bilan ochish mumkin"
-    });
+  return users[userId];
+}
+
+/***********************
+ * SAVOLLAR (DEMO)
+ ***********************/
+const QUESTIONS = [ Rockaiut-code ]
+  {
+    id: 1,
+    question: '2 + 2 = ?'
+    ,options: ['3', '4', '5', '6'],
+    correct: '4'
+  },
+  {
+    id: 2,
+    question: '5 * 3 = ?'
+    ,options: ['15', '10', '20', '8'],
+    correct: '15'
+  }
+];
+
+function getRandomQuestion() {
+  return QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
+}
+
+/***********************
+ * ENDPOINTLAR
+ ***********************/
+
+// User info
+app.post('/user', (req, res) => {
+  const { userId } = req.body;
+  const user = getUser(userId);
+  res.json(user);
+});
+
+// Savol olish
+app.post('/question', (req, res) => {
+  const { userId } = req.body;
+  const user = getUser(userId);
+
+  if (user.stats.questions >= DAILY_QUESTION_LIMIT) {
+    return res.status(403).json({ error: 'Kunlik savol limiti tugadi' });
   }
 
-  const q = questions[Math.floor(Math.random() * questions.length)];
-
-  user.currentQuestionId = q.id;
-  user.usedToday++;
+  user.stats.questions++;
+  const q = getRandomQuestion();
 
   res.json({
-    questionId: q.id,
+    id: q.id,
     question: q.question,
-    variants: q.variants,
-    leftToday: 100 - user.usedToday,
-    wrongLeft: 10 - user.wrongToday,
-    tokens: user.tokens
+    options: q.options
   });
 });
 
-/* ======================
-   JAVOB TEKSHIRISH
-====================== */
-app.post("/answer", (req, res) => {
-  const { tg_id, questionId, answerIndex } = req.body;
+// Javob yuborish
+app.post('/answer', (req, res) => {
+  const { userId, questionId, answer } = req.body;
+  const user = getUser(userId);
 
-  if (!tg_id || questionId === undefined || answerIndex === undefined) {
-    return res.json({ error: "Ma’lumot yetarli emas" });
-  }
+  const q = QUESTIONS.find(q => q.id === questionId);
+  if (!q) return res.status(404).json({ error: 'Savol topilmadi' });
 
-  const user = users[tg_id];
-  const q = questions.find(q => q.id === questionId);
+  let correct = false;
 
-  if (!user || !q || user.currentQuestionId !== questionId) {
-    return res.json({ error: "Savol mos kelmadi" });
-  }
-
-  const correct = Number(answerIndex) === q.correctIndex;
-
-  if (correct) {
-    user.tokens += 1; // 🎯 1 token ball
+  if (q.correct === answer) {
+    correct = true;
+    user.score += 1;
+    user.tokens += 1;
   } else {
-    user.wrongToday += 1;
+    if (user.stats.errors >= DAILY_ERROR_LIMIT + user.stats.extraErrors) {
+      return res.status(403).json({ error: 'Xato limiti tugadi' });
+    }
+    user.stats.errors++;
   }
 
   res.json({
     correct,
-    correctAnswer: q.variants[q.correctIndex],
-    message: correct ? "✅ To‘g‘ri javob" : "❌ Xato javob",
+    score: user.score,
     tokens: user.tokens,
-    wrongLeft: 10 - user.wrongToday
+    stats: user.stats
   });
 });
 
-/* ======================
-   TOKEN BILAN XATO LIMIT OCHISH
-====================== */
-app.post("/use-token", (req, res) => {
-  const { tg_id } = req.body;
+// Token bilan xato limiti sotib olish
+app.post('/buy-errors', (req, res) => {
+  const { userId } = req.body;
+  const user = getUser(userId);
 
-  if (!users[tg_id]) {
-    return res.json({ error: "Foydalanuvchi topilmadi" });
+  const price = 5; // 5 token
+
+  if (user.tokens < price) {
+    return res.status(403).json({ error: 'Token yetarli emas' });
   }
 
-  const user = users[tg_id];
-
-  if (user.tokens < 5) {
-    return res.json({
-      error: "❌ Yetarli token yo‘q (kamida 5 ta kerak)"
-    });
-  }
-
-  user.tokens -= 5;
-  user.wrongToday = 0;
+  user.tokens -= price;
+  user.stats.extraErrors += EXTRA_ERROR_PACK;
 
   res.json({
-    success: true,
-    message: "✅ Xato javoblar limiti tiklandi",
+    message: 'Xato limiti oshirildi',
+    extraErrors: user.stats.extraErrors,
     tokens: user.tokens
   });
 });
 
-/* ======================
-   SERVER ISHGA TUSHADI
-====================== */
+// Wallet ulash (TON Connect callback o'rniga demo)
+app.post('/connect-wallet', (req, res) => {
+  const { userId, wallet } = req.body;
+  const user = getUser(userId);
+
+  user.wallet = wallet;
+
+  res.json({ success: true, wallet });
+});
+
+/***********************
+ * SERVER START
+ ***********************/
 app.listen(PORT, () => {
-  console.log("Server ishga tushdi:", PORT);
+  console.log('Server ishga tushdi: http://localhost:' + PORT);
 });
