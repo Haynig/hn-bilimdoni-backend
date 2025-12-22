@@ -1,183 +1,133 @@
+// server.js
+require("dotenv").config();
 const express = require("express");
-const bodyParser = require("body-parser");
+const mongoose = require("mongoose");
 const cors = require("cors");
-const crypto = require("crypto");
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-/* ================== SOZLAMALAR ================== */
-const DAILY_QUESTION_LIMIT = 100;
-const DAILY_WRONG_LIMIT = 10;
-const EXTRA_WRONG_PRICE = 5; // 5 token = +5 xato
-const BOT_TOKEN = process.env.BOT_TOKEN;
+// ====== CONFIG ======
+const DAILY_QUESTIONS = 100;
+const DAILY_WRONG = 10;
+const BASE_REWARD = 0.01;
 
-/* ================== SOXTADB ================== */
-const users = {};
+// ====== DB CONNECT ======
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.error(err));
 
-/* ================== YORDAMCHI ================== */
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+// ====== SCHEMAS ======
+const User = mongoose.model("User", new mongoose.Schema({
+  telegramId: Number,
+  walletAddress: String,
+  hnBalance: { type: Number, default: 0 },
+  streak: { type: Number, default: 0 },
+  daily: {
+    date: String,
+    questionsUsed: { type: Number, default: 0 },
+    wrongUsed: { type: Number, default: 0 },
+    extraQuestions: { type: Number, default: 0 },
+    extraWrong: { type: Number, default: 0 },
+    questionPurchaseUsed: { type: Boolean, default: false }
+  }
+}));
 
-function initUser(userId) {
-  if (!users[userId]) {
-    users[userId] = {
-      tokens: 0,
-      stats: {
-        date: today(),
-        answered: 0,
-        wrong: 0,
-        extraWrong: 0
-      }
-    };
+const Question = mongoose.model("Question", new mongoose.Schema({
+  question: String,
+  options: [String],
+  correct: String
+}));
+
+// ====== HELPERS ======
+const today = () => new Date().toISOString().slice(0, 10);
+
+async function getUser(tg_id) {
+  let user = await User.findOne({ telegramId: tg_id });
+  if (!user) {
+    user = await User.create({
+      telegramId: tg_id,
+      daily: { date: today() }
+    });
   }
 
-  if (users[userId].stats.date !== today()) {
-    users[userId].stats = {
+  if (user.daily.date !== today()) {
+    user.daily = {
       date: today(),
-      answered: 0,
-      wrong: 0,
-      extraWrong: 0
+      questionsUsed: 0,
+      wrongUsed: 0,
+      extraQuestions: 0,
+      extraWrong: 0,
+      questionPurchaseUsed: false
     };
+    user.streak = 0;
+    await user.save();
   }
 
-  return users[userId];
+  return user;
 }
 
-/* ================== TELEGRAM AUTH ================== */
-function verifyTelegramInitData(initData) {
-  const params = new URLSearchParams(initData);
-  const hash = params.get("hash");
-  params.delete("hash");
+// ====== ROUTES ======
 
-  const dataCheckString = [...params.entries()]
-    .sort(([a],[b]) => a.localeCompare(b))
-    .map(([k,v]) => `${k}=${v}`)
-    .join("\n");
+app.get("/question", async (req, res) => {
+  const tg_id = Number(req.query.tg_id);
+  const user = await getUser(tg_id);
 
-  const secretKey = crypto
-    .createHash("sha256")
-    .update(BOT_TOKEN)
-    .digest();
+  const maxQ = DAILY_QUESTIONS + user.daily.extraQuestions;
+  const maxW = DAILY_WRONG + user.daily.extraWrong;
 
-  const calculatedHash = crypto
-    .createHmac("sha256", secretKey)
-    .update(dataCheckString)
-    .digest("hex");
-
-  return calculatedHash === hash;
-}
-
-function telegramAuth(req, res, next) {
-  const { initData } = req.body;
-
-  if (!initData) {
-    return res.status(401).json({ error: "initData yo‘q" });
+  if (user.daily.questionsUsed >= maxQ) {
+    return res.json({ blocked: true, message: "Kunlik savollar tugadi" });
   }
 
-  if (!verifyTelegramInitData(initData)) {
-    return res.status(403).json({ error: "Telegram tekshiruvdan o‘tmadi" });
+  if (user.daily.wrongUsed >= maxW) {
+    return res.json({ blocked: true, message: "Xato limiti tugadi" });
   }
 
-  const params = new URLSearchParams(initData);
-  const user = JSON.parse(params.get("user"));
-  req.userId = user.id;
-
-  next();
-}
-
-/* ================== SAVOLLAR ================== */
-const questions = [
-  {
-    id: 1,
-    question: "2 + 2 = ?",
-    options: ["3", "4", "5", "6"],
-    correct: "4"
-  },
-  {
-    id: 2,
-    question: "5 × 3 = ?",
-    options: ["15", "10", "20", "8"],
-    correct: "15"
-  }
-];
-
-/* ================== ROUTES ================== */
-
-// Savol olish
-app.post("/question", telegramAuth, (req, res) => {
-  const user = initUser(req.userId);
-
-  if (user.stats.answered >= DAILY_QUESTION_LIMIT) {
-    return res.status(403).json({ error: "Kunlik savollar limiti tugadi" });
-  }
-
-  const q = questions[Math.floor(Math.random() * questions.length)];
+  const q = await Question.aggregate([{ $sample: { size: 1 } }]);
 
   res.json({
-    id: q.id,
-    question: q.question,
-    options: q.options,
-    answered: user.stats.answered,
-    limit: DAILY_QUESTION_LIMIT,
-    wrong: user.stats.wrong,
-    maxWrong: DAILY_WRONG_LIMIT + user.stats.extraWrong
+    question: q[0].question,
+    options: q[0].options,
+    used: user.daily.questionsUsed,
+    wrong: user.daily.wrongUsed,
+    streak: user.streak
   });
 });
 
-// Javob yuborish
-app.post("/answer", telegramAuth, (req, res) => {
-  const { questionId, answer } = req.body;
-  const user = initUser(req.userId);
+app.post("/answer", async (req, res) => {
+  const { tg_id, answer, correct } = req.body;
+  const user = await getUser(tg_id);
 
-  const q = questions.find(q => q.id === questionId);
-  if (!q) return res.status(404).json({ error: "Savol topilmadi" });
+  user.daily.questionsUsed++;
 
-  user.stats.answered++;
-
-  if (answer === q.correct) {
-    user.tokens += 1;
-    return res.json({
-      correct: true,
-      message: "To‘g‘ri! +1 token",
-      tokens: user.tokens
-    });
+  if (answer === correct) {
+    user.streak++;
+    const reward = BASE_REWARD * user.streak;
+    user.hnBalance += reward;
+    await user.save();
+    return res.json({ message: `✅ +${reward.toFixed(2)} HN` });
   } else {
-    user.stats.wrong++;
-    const maxWrong = DAILY_WRONG_LIMIT + user.stats.extraWrong;
-
-    if (user.stats.wrong > maxWrong) {
-      return res.status(403).json({ error: "Xato javoblar limiti tugadi" });
-    }
-
-    return res.json({
-      correct: false,
-      message: "Noto‘g‘ri javob"
-    });
+    user.streak = 0;
+    user.daily.wrongUsed++;
+    await user.save();
+    return res.json({ message: "❌ Noto‘g‘ri" });
   }
 });
 
-// Qo‘shimcha xato sotib olish
-app.post("/buy-extra-wrong", telegramAuth, (req, res) => {
-  const user = initUser(req.userId);
+// ====== MOCK PURCHASE ======
+app.post("/buy", async (req, res) => {
+  const { tg_id, type, amount } = req.body;
+  const user = await getUser(tg_id);
 
-  if (user.tokens < EXTRA_WRONG_PRICE) {
-    return res.status(403).json({ error: "Token yetarli emas" });
-  }
+  if (type === "wrong") user.daily.extraWrong += amount;
+  if (type === "question") user.daily.extraQuestions += amount;
 
-  user.tokens -= EXTRA_WRONG_PRICE;
-  user.stats.extraWrong += 5;
-
-  res.json({
-    message: "+5 ta qo‘shimcha xato imkon olindi",
-    tokens: user.tokens
-  });
+  await user.save();
+  res.json({ message: "✅ Xarid muvaffaqiyatli" });
 });
 
-/* ================== START ================== */
+// ====== START ======
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("✅ Server ishga tushdi:", PORT);
-});
+app.listen(PORT, () => console.log("Server running on", PORT));
