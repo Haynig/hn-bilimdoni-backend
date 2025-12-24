@@ -39,6 +39,14 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
+const transactionSchema = new mongoose.Schema({
+  txHash: { type: String, unique: true },
+  telegramId: String,
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Transaction = mongoose.model("Transaction", transactionSchema);
+
 /* =========================
    YORDAMCHI FUNKSIYALAR
 ========================= */
@@ -139,6 +147,15 @@ app.post("/verify-payment", telegramAuth, async (req, res) => {
   const { userId, txHash } = req.body;
 
   try {
+    // 1️⃣ Replay attack tekshiruvi
+    const exists = await Transaction.findOne({ txHash });
+    if (exists) {
+      return res.status(403).json({
+        error: "Bu transaction allaqachon ishlatilgan"
+      });
+    }
+
+    // 2️⃣ TON blockchain tekshiruvi
     const url = `https://toncenter.com/api/v2/getTransaction?hash=${txHash}`;
     const { data } = await axios.get(url);
 
@@ -157,9 +174,16 @@ app.post("/verify-payment", telegramAuth, async (req, res) => {
       return res.status(403).json({ error: "Summa yetarli emas" });
     }
 
+    // 3️⃣ Userga token qo‘shish
     const user = await getUser(userId);
     user.tokens += TOKEN_REWARD;
     await user.save();
+
+    // 4️⃣ Transactionni saqlash (MUHIM)
+    await Transaction.create({
+      txHash,
+      telegramId: userId
+    });
 
     res.json({
       success: true,
@@ -167,7 +191,9 @@ app.post("/verify-payment", telegramAuth, async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: "TON tekshiruvda xatolik" });
+    res.status(500).json({
+      error: "Transaction tekshiruvda xatolik"
+    });
   }
 });
 
