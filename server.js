@@ -1,133 +1,121 @@
 // server.js
-require("dotenv").config();
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
+import express from "express";
+import bodyParser from "body-parser";
+import cors from "cors";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-// ====== CONFIG ======
-const DAILY_QUESTIONS = 100;
-const DAILY_WRONG = 10;
-const BASE_REWARD = 0.01;
+/*
+  Oddiy demo storage (real loyihada DB bo‘ladi)
+*/
+const users = {}; 
+/*
+users[userId] = {
+  dailyCount: 0,
+  wrongCount: 0,
+  tokens: 0,
+  lastReset: Date
+}
+*/
 
-// ====== DB CONNECT ======
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.error(err));
+const DAILY_LIMIT = 100;   // to‘g‘ri + xato
+const WRONG_LIMIT = 10;    // xato javoblar
+const EXTRA_WRONG_PRICE = 5; // 5 token = 1 imkon
 
-// ====== SCHEMAS ======
-const User = mongoose.model("User", new mongoose.Schema({
-  telegramId: Number,
-  walletAddress: String,
-  hnBalance: { type: Number, default: 0 },
-  streak: { type: Number, default: 0 },
-  daily: {
-    date: String,
-    questionsUsed: { type: Number, default: 0 },
-    wrongUsed: { type: Number, default: 0 },
-    extraQuestions: { type: Number, default: 0 },
-    extraWrong: { type: Number, default: 0 },
-    questionPurchaseUsed: { type: Boolean, default: false }
+function resetIfNewDay(user) {
+  const now = new Date();
+  if (!user.lastReset || now.toDateString() !== user.lastReset.toDateString()) {
+    user.dailyCount = 0;
+    user.wrongCount = 0;
+    user.lastReset = now;
   }
-}));
-
-const Question = mongoose.model("Question", new mongoose.Schema({
-  question: String,
-  options: [String],
-  correct: String
-}));
-
-// ====== HELPERS ======
-const today = () => new Date().toISOString().slice(0, 10);
-
-async function getUser(tg_id) {
-  let user = await User.findOne({ telegramId: tg_id });
-  if (!user) {
-    user = await User.create({
-      telegramId: tg_id,
-      daily: { date: today() }
-    });
-  }
-
-  if (user.daily.date !== today()) {
-    user.daily = {
-      date: today(),
-      questionsUsed: 0,
-      wrongUsed: 0,
-      extraQuestions: 0,
-      extraWrong: 0,
-      questionPurchaseUsed: false
-    };
-    user.streak = 0;
-    await user.save();
-  }
-
-  return user;
 }
 
-// ====== ROUTES ======
+app.post("/answer", (req, res) => {
+  const { userId, isCorrect } = req.body;
 
-app.get("/question", async (req, res) => {
-  const tg_id = Number(req.query.tg_id);
-  const user = await getUser(tg_id);
-
-  const maxQ = DAILY_QUESTIONS + user.daily.extraQuestions;
-  const maxW = DAILY_WRONG + user.daily.extraWrong;
-
-  if (user.daily.questionsUsed >= maxQ) {
-    return res.json({ blocked: true, message: "Kunlik savollar tugadi" });
+  if (!users[userId]) {
+    users[userId] = {
+      dailyCount: 0,
+      wrongCount: 0,
+      tokens: 0,
+      lastReset: new Date()
+    };
   }
 
-  if (user.daily.wrongUsed >= maxW) {
-    return res.json({ blocked: true, message: "Xato limiti tugadi" });
+  const user = users[userId];
+  resetIfNewDay(user);
+
+  if (user.dailyCount >= DAILY_LIMIT) {
+    return res.status(403).json({ error: "Sutkalik limit tugadi" });
   }
 
-  const q = await Question.aggregate([{ $sample: { size: 1 } }]);
+  if (!isCorrect) {
+    if (user.wrongCount >= WRONG_LIMIT) {
+      return res.status(403).json({
+        error: "Xato javoblar limiti tugadi. Token orqali sotib oling."
+      });
+    }
+    user.wrongCount++;
+  }
+
+  user.dailyCount++;
 
   res.json({
-    question: q[0].question,
-    options: q[0].options,
-    used: user.daily.questionsUsed,
-    wrong: user.daily.wrongUsed,
-    streak: user.streak
+    success: true,
+    dailyLeft: DAILY_LIMIT - user.dailyCount,
+    wrongLeft: WRONG_LIMIT - user.wrongCount
   });
 });
 
-app.post("/answer", async (req, res) => {
-  const { tg_id, answer, correct } = req.body;
-  const user = await getUser(tg_id);
+/*
+  Xato javob limiti sotib olish
+*/
+app.post("/buy-wrong", (req, res) => {
+  const { userId } = req.body;
+  const user = users[userId];
 
-  user.daily.questionsUsed++;
+  if (!user) return res.status(404).json({ error: "User topilmadi" });
 
-  if (answer === correct) {
-    user.streak++;
-    const reward = BASE_REWARD * user.streak;
-    user.hnBalance += reward;
-    await user.save();
-    return res.json({ message: `✅ +${reward.toFixed(2)} HN` });
-  } else {
-    user.streak = 0;
-    user.daily.wrongUsed++;
-    await user.save();
-    return res.json({ message: "❌ Noto‘g‘ri" });
+  if (user.tokens < EXTRA_WRONG_PRICE) {
+    return res.status(403).json({ error: "Token yetarli emas" });
   }
+
+  user.tokens -= EXTRA_WRONG_PRICE;
+  user.wrongCount--;
+
+  res.json({
+    success: true,
+    tokens: user.tokens,
+    wrongLeft: WRONG_LIMIT - user.wrongCount
+  });
 });
 
-// ====== MOCK PURCHASE ======
-app.post("/buy", async (req, res) => {
-  const { tg_id, type, amount } = req.body;
-  const user = await getUser(tg_id);
+/*
+  Walletdan token qo‘shish (TON Connectdan keyin chaqiriladi)
+*/
+app.post("/add-tokens", (req, res) => {
+  const { userId, amount } = req.body;
 
-  if (type === "wrong") user.daily.extraWrong += amount;
-  if (type === "question") user.daily.extraQuestions += amount;
+  if (!users[userId]) {
+    users[userId] = {
+      dailyCount: 0,
+      wrongCount: 0,
+      tokens: 0,
+      lastReset: new Date()
+    };
+  }
 
-  await user.save();
-  res.json({ message: "✅ Xarid muvaffaqiyatli" });
+  users[userId].tokens += amount;
+
+  res.json({
+    success: true,
+    tokens: users[userId].tokens
+  });
 });
 
-// ====== START ======
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running on", PORT));
+app.listen(3000, () => {
+  console.log("Server 3000-portda ishlayapti");
+});
