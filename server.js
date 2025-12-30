@@ -26,6 +26,8 @@ mongoose.connect(process.env.MONGO_URI, {
 const userSchema = new mongoose.Schema({
   telegramId: { type: String, unique: true },
 
+  walletAddress: { type: String, default: null },
+
   dailyQuestions: { type: Number, default: 0 },
   dailyErrors: { type: Number, default: 0 },
 
@@ -33,8 +35,6 @@ const userSchema = new mongoose.Schema({
 
   lastReset: { type: Date, default: Date.now }
 });
-
-const User = mongoose.model("User", userSchema);
 
 /* =======================
    Kunlik reset funksiyasi
