@@ -1,169 +1,133 @@
 import express from "express";
-import mongoose from "mongoose";
-import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
+import connectDB from "./db.js";
+
+import { User } from "./models/User.js";
+import { Account } from "./models/Account.js";
+import { Transaction } from "./models/Transaction.js";
+import { Rate } from "./models/Rate.js";
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-/* =======================
-   MongoDB ulanish
-======================= */
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log("MongoDB ulandi"))
-.catch(err => console.log("Mongo error:", err));
+// 🔌 MongoDB ulanish
+connectDB();
 
-/* =======================
-   User Schema
-======================= */
-const userSchema = new mongoose.Schema({
-  telegramId: { type: String, unique: true },
+// ==========================
+// YORDAMCHI FUNKSIYALAR
+// ==========================
+const generateAccountNumber = (prefix) => {
+  const random = Math.floor(100000000000 + Math.random() * 900000000000);
+  return `${prefix}${random.toString().slice(0, 12)}`;
+};
 
-  walletAddress: { type: String, default: null },
-
-  dailyQuestions: { type: Number, default: 0 },
-  dailyErrors: { type: Number, default: 0 },
-
-  tokens: { type: Number, default: 0 },
-
-  lastReset: { type: Date, default: Date.now }
+// ==========================
+// API: SERVER TEKSHIRUV
+// ==========================
+app.get("/", (req, res) => {
+  res.json({ status: "HN Wallet backend ishlayapti 🚀" });
 });
 
-/* =======================
-   Kunlik reset funksiyasi
-======================= */
-function resetIfNewDay(user) {
-  const now = new Date();
-  const last = new Date(user.lastReset);
-
-  if (now.toDateString() !== last.toDateString()) {
-    user.dailyQuestions = 0;
-    user.dailyErrors = 0;
-    user.lastReset = now;
-  }
-}
-
-/* =======================
-   Savol yuborish API
-======================= */
-app.post("/ask", async (req, res) => {
+// ==========================
+// API: USER YARATISH
+// ==========================
+app.post("/api/users", async (req, res) => {
   try {
-    const { telegramId, isCorrect } = req.body;
+    const { fullName, phone, tonAddress } = req.body;
 
-    if (!telegramId) {
-      return res.status(400).json({ message: "telegramId yo‘q" });
-    }
-
-    let user = await User.findOne({ telegramId });
-    if (!user) {
-      user = await User.create({ telegramId });
-    }
-
-    resetIfNewDay(user);
-
-    // 1️⃣ Kunlik savol limiti
-    if (user.dailyQuestions >= 100) {
-      return res.status(403).json({
-        message: "Kunlik 100 ta savol limiti tugadi"
-      });
-    }
-
-    // 2️⃣ Xato limiti
-    if (!isCorrect && user.dailyErrors >= 10) {
-      return res.status(403).json({
-        message: "Xato javoblar limiti tugadi. Token orqali oching"
-      });
-    }
-
-    // Hisoblash
-    user.dailyQuestions += 1;
-
-    if (!isCorrect) {
-      user.dailyErrors += 1;
-    }
-
-    await user.save();
-
-    res.json({
-      success: true,
-      dailyQuestions: user.dailyQuestions,
-      dailyErrors: user.dailyErrors,
-      tokens: user.tokens
+    const user = await User.create({
+      fullName,
+      phone,
+      tonAddress,
     });
 
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Server xatosi" });
-  }
-});
+    // 4 ta hisob avtomatik yaratiladi
+    const accounts = [
+      {
+        userId: user._id,
+        type: "SOM",
+        accountNumber: generateAccountNumber("1991"),
+      },
+      {
+        userId: user._id,
+        type: "HN",
+        accountNumber: generateAccountNumber("1604"),
+      },
+      {
+        userId: user._id,
+        type: "SAVINGS",
+        accountNumber: generateAccountNumber("1999"),
+      },
+      {
+        userId: user._id,
+        type: "BONUS",
+        accountNumber: generateAccountNumber("9199"),
+      },
+    ];
 
-/* =======================
-   Token orqali xato sotib olish
-======================= */
-app.post("/buy-errors", async (req, res) => {
-  try {
-    const { telegramId } = req.body;
-
-    const user = await User.findOne({ telegramId });
-    if (!user) {
-      return res.status(404).json({ message: "User topilmadi" });
-    }
-
-    // 5 token = 5 ta xato imkoniyati
-    if (user.tokens < 5) {
-      return res.status(403).json({
-        message: "Token yetarli emas"
-      });
-    }
-
-    user.tokens -= 5;
-    user.dailyErrors -= 5;
-
-    if (user.dailyErrors < 0) {
-      user.dailyErrors = 0;
-    }
-
-    await user.save();
+    await Account.insertMany(accounts);
 
     res.json({
-      success: true,
-      dailyErrors: user.dailyErrors,
-      tokens: user.tokens
+      message: "User va hisoblar yaratildi",
+      user,
+      accounts,
     });
-
   } catch (err) {
-    res.status(500).json({ message: "Server xatosi" });
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* =======================
-   User holatini olish
-======================= */
-app.get("/status/:telegramId", async (req, res) => {
-  const user = await User.findOne({ telegramId: req.params.telegramId });
-  if (!user) return res.json(null);
+// ==========================
+// API: USER BALANSLARI
+// ==========================
+app.get("/api/accounts/:userId", async (req, res) => {
+  try {
+    const accounts = await Account.find({
+      userId: req.params.userId,
+    });
 
-  resetIfNewDay(user);
-  await user.save();
+    const rate = await Rate.findOne({ pair: "HN/SOM" });
 
-  res.json({
-    dailyQuestions: user.dailyQuestions,
-    dailyErrors: user.dailyErrors,
-    tokens: user.tokens
-  });
+    res.json({
+      rate: rate?.rate || 1200,
+      accounts,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-/* =======================
-   Server start
-======================= */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server ishga tushdi:", PORT);
+// ==========================
+// API: KURSNI OLISH
+// ==========================
+app.get("/api/rate", async (req, res) => {
+  const rate = await Rate.findOne({ pair: "HN/SOM" });
+  res.json({ rate: rate?.rate || 1200 });
 });
+
+// ==========================
+// API: KURSNI O‘ZGARTIRISH (ADMIN)
+// ==========================
+app.post("/api/rate", async (req, res) => {
+  const { rate, adminId } = req.body;
+
+  const updated = await Rate.findOneAndUpdate(
+    { pair: "HN/SOM" },
+    { rate, updatedBy: adminId },
+    { upsert: true, new: true }
+  );
+
+  res.json(updated);
+});
+
+// ==========================
+// SERVER ISHGA TUSHADI
+// ==========================
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () =>
+  console.log(`🚀 Server ishga tushdi: http://localhost:${PORT}`)
+);
