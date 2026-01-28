@@ -78,3 +78,110 @@ const RateSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const Rate = mongoose.model("Rate", RateSchema);
+
+
+/* =========================
+   QO‘SHIMCHA API: KONVERTATSIYA, JAMG‘ARMA, BONUS, TARIX
+========================= */
+
+// 1️⃣ HN -> SO‘M yoki SO‘M -> HN konvertatsiya
+app.post("/api/convert", async (req, res) => {
+  const { fromType, toType, amount, userId } = req.body;
+  const rateDoc = await Rate.findOne({ pair: "HN/SOM" });
+  const rate = rateDoc?.rate || 1200;
+
+  const fromAccount = await Account.findOne({ userId, type: fromType });
+  const toAccount = await Account.findOne({ userId, type: toType });
+
+  if (!fromAccount || !toAccount) return res.status(400).json({ error: "Hisob topilmadi" });
+  if (fromAccount.balance < amount) return res.status(400).json({ error: "Balans yetarli emas" });
+
+  let convertedAmount = amount;
+  if (fromType === "HN" && toType === "SOM") convertedAmount = amount * rate;
+  if (fromType === "SOM" && toType === "HN") convertedAmount = amount / rate;
+
+  fromAccount.balance -= amount;
+  toAccount.balance += convertedAmount;
+
+  await fromAccount.save();
+  await toAccount.save();
+
+  await Transaction.create({
+    fromAccount: fromAccount.accountNumber,
+    toAccount: toAccount.accountNumber,
+    amount,
+    currency: fromType,
+    rate,
+    type: "CONVERT",
+    status: "COMPLETED",
+  });
+
+  res.json({ message: "Konvertatsiya bajarildi" });
+});
+
+// 2️⃣ Jamg‘arma ochish / to‘ldirish
+app.post("/api/savings", async (req, res) => {
+  const { userId, amount } = req.body;
+  const main = await Account.findOne({ userId, type: "HN" });
+  const savings = await Account.findOne({ userId, type: "SAVINGS" });
+
+  if (main.balance < amount) return res.status(400).json({ error: "Balans yetarli emas" });
+
+  main.balance -= amount;
+  savings.balance += amount;
+
+  await main.save();
+  await savings.save();
+
+  await Transaction.create({
+    fromAccount: main.accountNumber,
+    toAccount: savings.accountNumber,
+    amount,
+    currency: "HN",
+    type: "SAVINGS",
+    status: "COMPLETED",
+  });
+
+  res.json({ message: "Jamg‘arma to‘ldirildi" });
+});
+
+// 3️⃣ Bonusni asosiy balansga o‘tkazish (100 HN)
+app.post("/api/bonus/transfer", async (req, res) => {
+  const { userId } = req.body;
+  const bonus = await Account.findOne({ userId, type: "BONUS" });
+  const main = await Account.findOne({ userId, type: "HN" });
+
+  if (bonus.balance < 100) return res.status(400).json({ error: "Bonus yetarli emas" });
+
+  bonus.balance -= 100;
+  main.balance += 100;
+
+  await bonus.save();
+  await main.save();
+
+  await Transaction.create({
+    fromAccount: bonus.accountNumber,
+    toAccount: main.accountNumber,
+    amount: 100,
+    currency: "HN",
+    type: "BONUS",
+    status: "COMPLETED",
+  });
+
+  res.json({ message: "Bonus o‘tkazildi" });
+});
+
+// 4️⃣ Amaliyotlar tarixi (monitoring)
+app.get("/api/transactions/:userId", async (req, res) => {
+  const accounts = await Account.find({ userId: req.params.userId });
+  const numbers = accounts.map(a => a.accountNumber);
+
+  const history = await Transaction.find({
+    $or: [
+      { fromAccount: { $in: numbers } },
+      { toAccount: { $in: numbers } },
+    ],
+  }).sort({ createdAt: -1 });
+
+  res.json(history);
+});
