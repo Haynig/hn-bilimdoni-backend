@@ -7,15 +7,15 @@ const transactionSchema = new mongoose.Schema({
     required: true
   },
   type: {
-    type: String, 
-    // TOPUP | WITHDRAW | P2P | CONVERT | BONUS | SAVINGS
+    type: String,
     required: true
   },
   fromAccount: String,
   toAccount: String,
   amount: Number,
   currency: {
-    type: String, // SOM | HN
+    type: String,
+    enum: ["SOM", "HN"],
     required: true
   },
   description: String,
