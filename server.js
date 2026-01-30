@@ -5,6 +5,8 @@ import dotenv from "dotenv";
 import connectDB from "./db.js";
 import User from "./models/User.js";
 import Account from "./models/Account.js";
+import Transaction from "./models/Transaction.js";
+
 
 dotenv.config();
 
