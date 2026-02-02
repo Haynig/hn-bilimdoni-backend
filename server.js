@@ -1,26 +1,50 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
-
 import connectDB from "./db.js";
-import User from "./models/User.js";
-import Account from "./models/Account.js";
-import Transaction from "./models/Transaction.js";
-import Rate from "./models/Rate.js";
+
+// routes
+import walletRoutes from "./routes/wallet.routes.js";
 
 dotenv.config();
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
+// 🔗 MongoDB ulanish
 connectDB();
 
+const app = express();
+
+// 🔧 middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 🌐 test route
 app.get("/", (req, res) => {
-  res.json({ status: "HN Wallet backend ishlayapti 🚀" });
+  res.json({
+    status: "OK",
+    message: "HN Wallet backend ishlayapti 🚀",
+    time: new Date(),
+  });
 });
 
+// 💼 wallet API route’lar
+app.use("/api/wallet", walletRoutes);
+
+// ❌ 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Route topilmadi",
+  });
+});
+
+// 🔥 error handler
+app.use((err, req, res, next) => {
+  console.error("Server xatosi:", err);
+  res.status(500).json({
+    error: "Server ichki xatosi",
+  });
+});
+
+// 🚀 server start
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`Server ${PORT} da ishlayapti`);
+  console.log(`✅ Server ${PORT} portda ishlayapti`);
 });
