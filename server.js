@@ -6,7 +6,7 @@ import connectDB from "./db.js";
 import User from "./models/User.js";
 import Account from "./models/Account.js";
 import Transaction from "./models/Transaction.js";
-
+import Rate from "./models/Rate.js";
 
 dotenv.config();
 
