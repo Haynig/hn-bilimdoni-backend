@@ -4,6 +4,8 @@ import connectDB from "./db.js";
 
 // routes
 import walletRoutes from "./routes/wallet.routes.js";
+import userRoutes from "./routes/user.routes.js";
+
 
 dotenv.config();
 
@@ -27,6 +29,8 @@ app.get("/", (req, res) => {
 
 // 💼 wallet API route’lar
 app.use("/api/wallet", walletRoutes);
+app.use("/api/user", userRoutes);
+
 
 // ❌ 404 handler
 app.use((req, res) => {
