@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import dotenv from "dotenv";
 import connectDB from "./db.js";
@@ -5,7 +6,6 @@ import connectDB from "./db.js";
 // routes
 import walletRoutes from "./routes/wallet.routes.js";
 import userRoutes from "./routes/user.routes.js";
-
 
 dotenv.config();
 
@@ -27,10 +27,9 @@ app.get("/", (req, res) => {
   });
 });
 
-// 💼 wallet API route’lar
+// 💼 wallet va user API route’lar
 app.use("/api/wallet", walletRoutes);
 app.use("/api/user", userRoutes);
-
 
 // ❌ 404 handler
 app.use((req, res) => {
@@ -39,7 +38,7 @@ app.use((req, res) => {
   });
 });
 
-// 🔥 error handler
+// 🔥 global error handler
 app.use((err, req, res, next) => {
   console.error("Server xatosi:", err);
   res.status(500).json({
