@@ -1,72 +1,94 @@
 import express from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Account from "../models/Account.js";
 
 const router = express.Router();
 
-// 🆕 User yaratish
-router.post("/create", async (req, res) => {
+/* =========================
+   REGISTER
+========================= */
+router.post("/register", async (req, res) => {
   try {
-    const { fullName, phone, tonAddress } = req.body;
+    const { name, phone, password } = req.body;
 
-    const existing = await User.findOne({ phone });
-    if (existing) {
-      return res.status(400).json({ error: "Bu telefon raqam mavjud" });
+    if (!name || !phone || !password) {
+      return res.status(400).json({ error: "Barcha maydonlarni to'ldiring" });
     }
 
+    const existingUser = await User.findOne({ phone });
+    if (existingUser) {
+      return res.status(400).json({ error: "User allaqachon mavjud" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = await User.create({
-      fullName,
+      name,
       phone,
-      tonAddress
+      password: hashedPassword,
     });
 
-    // 4 ta hisob yaratish
-    const time = Date.now();
-
-    await Account.create([
-      {
-        userId: user._id,
-        type: "SOM",
-        accountNumber: "1991" + time,
-        balance: 0
-      },
-      {
-        userId: user._id,
-        type: "HN",
-        accountNumber: "1604" + time,
-        balance: 0
-      },
-      {
-        userId: user._id,
-        type: "SAVINGS",
-        accountNumber: "1999" + time,
-        balance: 0
-      },
-      {
-        userId: user._id,
-        type: "BONUS",
-        accountNumber: "9199" + time,
-        balance: 0
-      }
-    ]);
-
-    res.json({
-      message: "User yaratildi",
-      userId: user._id
+    // HN account
+    await Account.create({
+      userId: user._id,
+      type: "HN",
+      balance: 0,
+      accountNumber: "HN" + Date.now(),
     });
 
-  } catch (error) {
-    console.error(error);
+    // UZS account
+    await Account.create({
+      userId: user._id,
+      type: "UZS",
+      balance: 0,
+      accountNumber: "UZS" + Date.now(),
+    });
+
+    res.status(201).json({
+      message: "User muvaffaqiyatli yaratildi",
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Server xatosi" });
   }
 });
 
-// 📄 User balanslarini ko‘rish
-router.get("/accounts/:userId", async (req, res) => {
+/* =========================
+   LOGIN
+========================= */
+router.post("/login", async (req, res) => {
   try {
-    const accounts = await Account.find({ userId: req.params.userId });
-    res.json(accounts);
+    const { phone, password } = req.body;
+
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(400).json({ error: "User topilmadi" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Parol noto‘g‘ri" });
+    }
+
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET || "secret",
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      message: "Login muvaffaqiyatli",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        phone: user.phone,
+      },
+    });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Server xatosi" });
   }
 });
