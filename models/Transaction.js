@@ -6,10 +6,8 @@ const transactionSchema = new mongoose.Schema({
   amount: Number,
   currency: { type: String, enum: ["HN", "SOM"] },
   rate: Number,
-  type: { type: String },
+  type: String,
   status: { type: String, default: "COMPLETED" }
 }, { timestamps: true });
 
-const Transaction = mongoose.model("Transaction", transactionSchema);
-
-export default Transaction;
+export default mongoose.model("Transaction", transactionSchema);
