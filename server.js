@@ -9,6 +9,7 @@ import User from "./models/User.js";
 import Account from "./models/Account.js";
 import Transaction from "./models/Transaction.js";
 import Rate from "./models/Rate.js";
+import userRoutes from "./routes/user.routes.js";
 
 dotenv.config();
 connectDB();
@@ -18,6 +19,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
+app.use("/api/user", userRoutes);
+
 
 /* =========================
    ROOT
