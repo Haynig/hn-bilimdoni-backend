@@ -9,6 +9,8 @@ import User from "./models/User.js";
 import Account from "./models/Account.js";
 import Transaction from "./models/Transaction.js";
 import Rate from "./models/Rate.js";
+
+import walletRoutes from "./routes/wallet.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
 dotenv.config();
@@ -19,6 +21,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
+
+app.use("/api/wallet", walletRoutes);
 app.use("/api/user", userRoutes);
 
 
