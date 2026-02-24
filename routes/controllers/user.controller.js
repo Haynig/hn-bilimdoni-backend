@@ -1,5 +1,5 @@
-import User from "../models/User.js";
-import Account from "../models/Account.js";
+import User from "../../models/User.js";
+import Account from "../../models/Account.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
