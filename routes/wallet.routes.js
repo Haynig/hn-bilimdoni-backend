@@ -1,72 +1,50 @@
 import express from "express";
 import Account from "../models/Account.js";
 import Transaction from "../models/Transaction.js";
-import Rate from "../models/Rate.js";
+import auth from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 🔁 HN ↔ SOM konvertatsiya
-router.post("/convert", async (req, res) => {
-  try {
-    const { fromType, toType, amount, userId } = req.body;
-
-    const rateDoc = await Rate.findOne();
-    const rate = rateDoc?.rate || 1200;
-
-    const from = await Account.findOne({ userId, type: fromType });
-    const to = await Account.findOne({ userId, type: toType });
-
-    if (!from || !to)
-      return res.status(400).json({ error: "Hisob topilmadi" });
-
-    if (from.balance < amount)
-      return res.status(400).json({ error: "Balans yetarli emas" });
-
-    const converted =
-      fromType === "HN" ? amount * rate : amount / rate;
-
-    from.balance -= amount;
-    to.balance += converted;
-
-    await from.save();
-    await to.save();
-
-    await Transaction.create({
-      fromAccount: from.accountNumber,
-      toAccount: to.accountNumber,
-      amount,
-      currency: fromType,
-      rate,
-      type: "CONVERT",
-      status: "COMPLETED",
-    });
-
-    res.json({ message: "Konvertatsiya bajarildi" });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Server xatosi" });
-  }
+router.get("/balance", auth, async (req, res) => {
+  const account = await Account.findOne({ userId: req.userId });
+  res.json({ balance: account.balance });
 });
 
-// 📜 Transaction history
-router.get("/transactions/:userId", async (req, res) => {
-  try {
-    const accounts = await Account.find({ userId: req.params.userId });
-    const numbers = accounts.map(a => a.accountNumber);
+router.post("/deposit", auth, async (req, res) => {
+  const { amount } = req.body;
 
-    const history = await Transaction.find({
-      $or: [
-        { fromAccount: { $in: numbers } },
-        { toAccount: { $in: numbers } }
-      ]
-    }).sort({ createdAt: -1 });
+  const account = await Account.findOne({ userId: req.userId });
 
-    res.json(history);
+  account.balance += Number(amount);
+  await account.save();
 
-  } catch (error) {
-    res.status(500).json({ error: "Server xatosi" });
-  }
+  await Transaction.create({
+    userId: req.userId,
+    type: "deposit",
+    amount
+  });
+
+  res.json({ message: "Pul qo‘shildi" });
+});
+
+router.post("/withdraw", auth, async (req, res) => {
+  const { amount } = req.body;
+
+  const account = await Account.findOne({ userId: req.userId });
+
+  if (account.balance < amount)
+    return res.status(400).json({ error: "Yetarli mablag‘ yo‘q" });
+
+  account.balance -= Number(amount);
+  await account.save();
+
+  await Transaction.create({
+    userId: req.userId,
+    type: "withdraw",
+    amount
+  });
+
+  res.json({ message: "Pul yechildi" });
 });
 
 export default router;
