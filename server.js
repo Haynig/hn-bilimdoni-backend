@@ -14,10 +14,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use(express.static("public"));
-
 app.get("/", (req, res) => {
-  res.json({ message: "HN Wallet Backend ishlayapti 🚀" });
+  res.json({ message: "HN Wallet API working 🚀" });
 });
 
 app.use("/api/user", userRoutes);
@@ -28,7 +26,6 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-
 app.listen(PORT, () => {
-  console.log(`Server ${PORT} portda ishlayapti 🚀`);
+  console.log(`✅ Server ${PORT} portda ishlayapti`);
 });
