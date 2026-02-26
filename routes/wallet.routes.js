@@ -1,50 +1,51 @@
 import express from "express";
+import jwt from "jsonwebtoken";
 import Account from "../models/Account.js";
 import Transaction from "../models/Transaction.js";
-import auth from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.get("/balance", auth, async (req, res) => {
-  const account = await Account.findOne({ userId: req.userId });
-  res.json({ balance: account.balance });
+function auth(req,res,next){
+  const token = req.headers.authorization?.split(" ")[1];
+  if(!token) return res.status(401).json({message:"No token"});
+  const decoded = jwt.verify(token,process.env.JWT_SECRET);
+  req.userId = decoded.id;
+  next();
+}
+
+router.get("/balance", auth, async (req,res)=>{
+  const accounts = await Account.find({ userId:req.userId });
+  const data = {};
+  accounts.forEach(a=> data[a.type]=a.balance );
+  res.json(data);
 });
 
-router.post("/deposit", auth, async (req, res) => {
-  const { amount } = req.body;
-
-  const account = await Account.findOne({ userId: req.userId });
-
-  account.balance += Number(amount);
-  await account.save();
-
-  await Transaction.create({
-    userId: req.userId,
-    type: "deposit",
-    amount
-  });
-
-  res.json({ message: "Pul qo‘shildi" });
+router.post("/deposit", auth, async (req,res)=>{
+  const { type, amount } = req.body;
+  const acc = await Account.findOne({ userId:req.userId,type });
+  acc.balance += amount;
+  await acc.save();
+  await Transaction.create({ userId:req.userId,toType:type,amount,type:"DEPOSIT" });
+  res.json({ message:"Deposit ok" });
 });
 
-router.post("/withdraw", auth, async (req, res) => {
-  const { amount } = req.body;
+router.post("/convert", auth, async (req,res)=>{
+  const { fromType,toType,amount,rate } = req.body;
 
-  const account = await Account.findOne({ userId: req.userId });
+  const from = await Account.findOne({ userId:req.userId,type:fromType });
+  const to = await Account.findOne({ userId:req.userId,type:toType });
 
-  if (account.balance < amount)
-    return res.status(400).json({ error: "Yetarli mablag‘ yo‘q" });
+  if(from.balance < amount) return res.status(400).json({message:"Balans yetarli emas"});
 
-  account.balance -= Number(amount);
-  await account.save();
+  const converted = fromType==="HN" ? amount*rate : amount/rate;
 
-  await Transaction.create({
-    userId: req.userId,
-    type: "withdraw",
-    amount
-  });
+  from.balance -= amount;
+  to.balance += converted;
 
-  res.json({ message: "Pul yechildi" });
+  await from.save();
+  await to.save();
+
+  res.json({ message:"Convert ok" });
 });
 
 export default router;
