@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 
+// RO'YXATDAN O'TISH
 export const register = async (req, res) => {
   try {
     const { username, password, phone } = req.body;
@@ -32,8 +33,17 @@ export const register = async (req, res) => {
       userId: newUser._id
     });
 
-  } 
-  export const login = async (req, res) => {
+  } catch (error) {
+    console.error(error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Ma'lumot allaqachon mavjud" });
+    }
+    res.status(500).json({ message: "Server xatoligi" });
+  }
+};
+
+// LOGIN
+export const login = async (req, res) => {
   try {
     const { foydalanuvchi_nomi, parol } = req.body;
 
@@ -41,21 +51,20 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "Foydalanuvchi nomi va parol kerak." });
     }
 
-    const user = await User.findOne({ foydalanuvchi_nomi });
+    const user = await User.findOne({ username: foydalanuvchi_nomi }); // username bilan qidirish
     if (!user) {
       return res.status(400).json({ message: "Foydalanuvchi topilmadi." });
     }
 
-    const parolMos = await bcrypt.compare(parol, user.parol);
+    const parolMos = await bcrypt.compare(parol, user.password); // parol bilan solishtirish
     if (!parolMos) {
       return res.status(400).json({ message: "Parol noto‘g‘ri." });
-    } catch (error) {
-
-    if (error.code === 11000) {
-      return res.status(400).json({ message: "Ma'lumot allaqachon mavjud" });
     }
-    
 
+    res.status(200).json({ message: "Muvaffaqiyatli kirildi", userId: user._id });
+
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Server xatoligi" });
   }
 };
