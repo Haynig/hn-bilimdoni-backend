@@ -1,45 +1,43 @@
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import Account from "../models/Account.js";
-import { generateAccountNumber } from "../utils/accountNumber.js";
+import bcrypt from "bcryptjs";
 
-export const register = async (req,res)=>{
-  const { name,email,password } = req.body;
+export const register = async (req, res) => {
+  try {
+    const { username, password, phone } = req.body;
 
-  const exist = await User.findOne({ email });
-  if(exist) return res.status(400).json({ message:"User mavjud" });
+    // Username tekshir
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ message: "Username mavjud" });
+    }
 
-  const hash = await bcrypt.hash(password,10);
-  const user = await User.create({ name,email,password:hash });
+    // Phone tekshir (agar yuborilgan bo‘lsa)
+    if (phone) {
+      const existingPhone = await User.findOne({ phone });
+      if (existingPhone) {
+        return res.status(400).json({ message: "Telefon mavjud" });
+      }
+    }
 
-  const types = [
-    {type:"HN",prefix:"HN"},
-    {type:"SOM",prefix:"SM"},
-    {type:"SAVINGS",prefix:"SV"},
-    {type:"BONUS",prefix:"BN"}
-  ];
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-  for(const acc of types){
-    await Account.create({
-      userId:user._id,
-      type:acc.type,
-      accountNumber:generateAccountNumber(acc.prefix),
-      balance:0
+    const newUser = await User.create({
+      username,
+      password: hashedPassword,
+      phone: phone || undefined
     });
+
+    res.status(201).json({
+      message: "Ro'yxatdan o'tildi",
+      userId: newUser._id
+    });
+
+  } catch (error) {
+
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Ma'lumot allaqachon mavjud" });
+    }
+
+    res.status(500).json({ message: "Server xatoligi" });
   }
-
-  res.json({ message:"Ro'yxatdan o'tdi" });
-};
-
-export const login = async (req,res)=>{
-  const { email,password } = req.body;
-  const user = await User.findOne({ email });
-  if(!user) return res.status(400).json({ message:"User topilmadi" });
-
-  const ok = await bcrypt.compare(password,user.password);
-  if(!ok) return res.status(400).json({ message:"Password xato" });
-
-  const token = jwt.sign({ id:user._id },process.env.JWT_SECRET);
-  res.json({ token });
 };
