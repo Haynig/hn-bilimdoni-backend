@@ -18,7 +18,10 @@ export const register = async (req, res) => {
         return res.status(400).json({ message: "Telefon mavjud" });
       }
     }
-
+  export const login = async (req, res) => {
+   ...
+};
+    
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await User.create({
