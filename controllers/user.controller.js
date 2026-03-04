@@ -18,9 +18,6 @@ export const register = async (req, res) => {
         return res.status(400).json({ message: "Telefon mavjud" });
       }
     }
-  export const login = async (req, res) => {
-   ...
-};
     
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -35,11 +32,29 @@ export const register = async (req, res) => {
       userId: newUser._id
     });
 
-  } catch (error) {
+  } 
+  export const login = async (req, res) => {
+  try {
+    const { foydalanuvchi_nomi, parol } = req.body;
+
+    if (!foydalanuvchi_nomi || !parol) {
+      return res.status(400).json({ message: "Foydalanuvchi nomi va parol kerak." });
+    }
+
+    const user = await User.findOne({ foydalanuvchi_nomi });
+    if (!user) {
+      return res.status(400).json({ message: "Foydalanuvchi topilmadi." });
+    }
+
+    const parolMos = await bcrypt.compare(parol, user.parol);
+    if (!parolMos) {
+      return res.status(400).json({ message: "Parol noto‘g‘ri." });
+    } catch (error) {
 
     if (error.code === 11000) {
       return res.status(400).json({ message: "Ma'lumot allaqachon mavjud" });
     }
+    
 
     res.status(500).json({ message: "Server xatoligi" });
   }
