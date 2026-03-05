@@ -1,70 +1,103 @@
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
-// RO'YXATDAN O'TISH
-export const register = async (req, res) => {
-  try {
-    const { username, password, phone } = req.body;
+export const register = async (req,res)=>{
 
-    // Username tekshir
-    const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(400).json({ message: "Username mavjud" });
-    }
+try{
 
-    // Phone tekshir (agar yuborilgan bo‘lsa)
-    if (phone) {
-      const existingPhone = await User.findOne({ phone });
-      if (existingPhone) {
-        return res.status(400).json({ message: "Telefon mavjud" });
-      }
-    }
-    
-    const hashedPassword = await bcrypt.hash(password, 10);
+const {username,password} = req.body;
 
-    const newUser = await User.create({
-      username,
-      password: hashedPassword,
-      phone: phone || undefined
-    });
+if(!username || !password){
 
-    res.status(201).json({
-      message: "Ro'yxatdan o'tildi",
-      userId: newUser._id
-    });
+return res.status(400).json({message:"Username va password kerak"});
 
-  } catch (error) {
-    console.error(error);
-    if (error.code === 11000) {
-      return res.status(400).json({ message: "Ma'lumot allaqachon mavjud" });
-    }
-    res.status(500).json({ message: "Server xatoligi" });
-  }
+}
+
+const exist = await User.findOne({username});
+
+if(exist){
+
+return res.status(400).json({message:"Username mavjud"});
+
+}
+
+const hashed = await bcrypt.hash(password,10);
+
+await User.create({
+
+username,
+password:hashed
+
+});
+
+res.json({message:"Ro'yxatdan o'tildi"});
+
+}catch(err){
+
+console.log(err);
+
+res.status(500).json({message:"Server xato"});
+
+}
+
 };
 
-// LOGIN
-export const login = async (req, res) => {
-  try {
-    const { foydalanuvchi_nomi, parol } = req.body;
 
-    if (!foydalanuvchi_nomi || !parol) {
-      return res.status(400).json({ message: "Foydalanuvchi nomi va parol kerak." });
-    }
+export const login = async (req,res)=>{
 
-    const user = await User.findOne({ username: foydalanuvchi_nomi }); // username bilan qidirish
-    if (!user) {
-      return res.status(400).json({ message: "Foydalanuvchi topilmadi." });
-    }
+try{
 
-    const parolMos = await bcrypt.compare(parol, user.password); // parol bilan solishtirish
-    if (!parolMos) {
-      return res.status(400).json({ message: "Parol noto‘g‘ri." });
-    }
+const {username,password} = req.body;
 
-    res.status(200).json({ message: "Muvaffaqiyatli kirildi", userId: user._id });
+const user = await User.findOne({username});
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server xatoligi" });
-  }
+if(!user){
+
+return res.status(400).json({message:"User topilmadi"});
+
+}
+
+const match = await bcrypt.compare(password,user.password);
+
+if(!match){
+
+return res.status(400).json({message:"Parol xato"});
+
+}
+
+const token = jwt.sign(
+
+{id:user._id},
+
+process.env.JWT_SECRET,
+
+{expiresIn:"7d"}
+
+);
+
+res.json({token});
+
+}catch(err){
+
+console.log(err);
+
+res.status(500).json({message:"Server xato"});
+
+}
+
+};
+
+
+export const me = async (req,res)=>{
+
+const user = await User.findById(req.user.id);
+
+res.json({
+
+somBalance:user.somBalance,
+hnBalance:user.hnBalance
+
+});
+
 };
