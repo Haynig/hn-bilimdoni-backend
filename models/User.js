@@ -1,38 +1,28 @@
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: true,
-    unique: true
-  },
 
-  password: {
-    type: String,
-    required: true
-  },
+username:{
+type:String,
+required:true,
+unique:true
+},
 
-  phone: {
-    type: String,
-    unique: true,
-    sparse: true   // 🔥 MUHIM
-  },
+password:{
+type:String,
+required:true
+},
 
-  uzsBalance: {
-    type: Number,
-    default: 0
-  },
+somBalance:{
+type:Number,
+default:0
+},
 
-  hnBalance: {
-    type: Number,
-    default: 0
-  },
+hnBalance:{
+type:Number,
+default:0
+}
 
-  cashbackBalance: {
-    type: Number,
-    default: 0
-  }
+},{timestamps:true});
 
-}, { timestamps: true });
-
-export default mongoose.model("User", userSchema);
+export default mongoose.model("User",userSchema);
