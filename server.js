@@ -11,11 +11,12 @@ connectDB();
 
 const app = express();
 
+import cors from "cors";
+
 app.use(cors({
-origin:[
-"https://haynig.github.io",
-"http://localhost:5500"
-]
+  origin: "*",
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"]
 }));
 
 app.use(express.json());
