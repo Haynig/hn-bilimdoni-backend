@@ -7,7 +7,13 @@ type:String,
 required:true,
 unique:true
 },
-
+  
+phone:{
+type:String,
+default:null,
+sparse:true
+},
+  
 password:{
 type:String,
 required:true
