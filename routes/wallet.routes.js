@@ -1,4 +1,7 @@
 import express from "express";
+import { withdraw } from "../controllers/wallet.controller.js";
+
+const router = express.Router();
 import jwt from "jsonwebtoken";
 import Account from "../models/Account.js";
 import Transaction from "../models/Transaction.js";
@@ -28,6 +31,8 @@ router.post("/deposit", auth, async (req,res)=>{
   await Transaction.create({ userId:req.userId,toType:type,amount,type:"DEPOSIT" });
   res.json({ message:"Deposit ok" });
 });
+
+router.post("/withdraw", withdraw);
 
 router.post("/convert", auth, async (req,res)=>{
   const { fromType,toType,amount,rate } = req.body;
