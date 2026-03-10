@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 
 import connectDB from "./db.js";
 import userRoutes from "./routes/user.routes.js";
+import walletRoutes from "./routes/wallet.routes.js";
 
 dotenv.config();
 
@@ -25,6 +26,8 @@ res.json({message:"HN Wallet API ishlayapti"});
 });
 
 app.use("/api/user",userRoutes);
+
+app.use("/api/wallet", walletRoutes);
 
 const PORT = process.env.PORT || 10000;
 
