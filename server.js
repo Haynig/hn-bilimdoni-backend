@@ -1,3 +1,4 @@
+import shopRoutes from "./routes/shop.routes.js";
 import express from "express";
 import dotenv from "dotenv";
 
@@ -12,6 +13,7 @@ connectDB();
 const app = express();
 
 import cors from "cors";
+app.use("/api/shop",shopRoutes);
 
 app.use(cors({
 origin:"*",
