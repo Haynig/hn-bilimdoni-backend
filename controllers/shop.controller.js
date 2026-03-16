@@ -1,7 +1,14 @@
-import { getHNtoUZS } from "../services/convert.service.js";
 import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import User from "../models/User.js";
+
+export const getProducts = async(req,res)=>{
+
+const products = await Product.find();
+
+res.json(products);
+
+};
 
 export const buyProduct = async(req,res)=>{
 
@@ -28,6 +35,6 @@ amount,
 totalHN:total
 });
 
-res.json({message:"Sotib olindi"});
+res.json({message:"Tovar sotib olindi"});
 
 };
